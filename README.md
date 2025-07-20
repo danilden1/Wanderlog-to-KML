@@ -2,7 +2,10 @@
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
 
-Convert your Wanderlog travel itineraries to KML format for use in Google Earth, Maps, and other GIS applications.
+Convert your Wanderlog travel itineraries to KML format for use in [Google Maps](https://www.google.com/maps), [Maps.me](https://maps.me/), [Organic Maps](https://organicmaps.app/ru/) and other GIS applications.
+
+![alt text](https://github.com/danilden1/Wanderlog-to-KML/blob/main/doc/klm_usage.JPG?raw=true)
+
 
 ## Features
 
