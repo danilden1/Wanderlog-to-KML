@@ -21,7 +21,7 @@ Convert your Wanderlog travel itineraries to KML format for use in Google Earth,
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/wanderlog-to-kml.git
+   git clone https://github.com/danilden1/Wanderlog-to-KML
    cd wanderlog-to-kml 
    ```
 2. Install dependencies:
