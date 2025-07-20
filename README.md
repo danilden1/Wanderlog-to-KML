@@ -39,8 +39,7 @@ Convert your Wanderlog travel itineraries to KML format for use in Google Earth,
 3. Go to the Source tab
 4. Find your trip in **wanderlog.com** folder
 5. Save file
-
-![alt text](dock/klm.JPG "Title")
+![alt text](https://github.com/danilden1/Wanderlog-to-KML/blob/main/doc/klm.JPG?raw=true)
 
 
 ## Usage
