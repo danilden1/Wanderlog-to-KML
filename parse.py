@@ -9,30 +9,52 @@ Convert Wanderlog travel itineraries to KML format for Google Earth/Maps.
 Author: Sidorenko Danil <[danilden1@yandex.ru]>
 GitHub: https://github.com/danilden1/Wanderlog-to-KML
 License: MIT
-Version: 1.0.0
+Version: 1.1.0
 Created: 2023-08-20
+Updated: 2025-08-15
 
 Features:
 - Extract locations with metadata from Wanderlog trips
 - Generate single or date-split KML files
 - Preserve original trip structure and names
+- Specify custom output directory for generated files
+- Progress and summary reporting
 """
 
 import json
 import re
 import argparse
+import os
 from xml.etree import ElementTree as ET
-from xml.dom import minidom
 from collections import defaultdict
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Convert trip data from HTML to KML')
+    """
+    Parse command-line arguments for the converter.
+
+    Returns:
+        argparse.Namespace: Parsed arguments with input_file, split, output, outdir.
+    """
+    parser = argparse.ArgumentParser(description='Convert Wanderlog trip HTML to KML format')
     parser.add_argument('input_file', help='Path to input HTML file')
     parser.add_argument('--split', action='store_true', help='Split into separate KML files by date')
     parser.add_argument('--output', help='Base name for output files (default: trip title)')
+    parser.add_argument('--outdir', default='.', help='Directory to save output files (default: current directory)')
     return parser.parse_args()
 
 def extract_data(html_content):
+    """
+    Extract trip title and location data from Wanderlog HTML export.
+
+    Args:
+        html_content (str): HTML content of exported Wanderlog trip.
+
+    Returns:
+        tuple: (title, places) where title is the trip name and places is a list of dicts.
+
+    Raises:
+        ValueError: If parsing fails or required data is missing.
+    """
     # Extract title
     title_match = re.search(r'<title.*?>(.*?) – Wanderlog</title>', html_content)
     title = title_match.group(1).strip() if title_match else "My Trip"
@@ -40,7 +62,7 @@ def extract_data(html_content):
     # Extract JSON data
     json_match = re.search(r'window\.__MOBX_STATE__\s*=\s*({.*?});', html_content, re.DOTALL)
     if not json_match:
-        raise ValueError("No JSON data found in HTML")
+        raise ValueError("No JSON data found in HTML. Make sure you exported the correct Wanderlog page.")
 
     try:
         data = json.loads(json_match.group(1))
@@ -59,27 +81,38 @@ def extract_data(html_content):
     for section in trip_plan['itinerary']['sections']:
         if 'blocks' not in section:
             continue
-            
         for block in section['blocks']:
             if block.get('type') == 'place' and 'place' in block:
                 place = block['place']
                 try:
                     date = block_to_date.get(block['id'], section.get('date', ''))
                     day_month = f"{date[8:10]}.{date[5:7]}" if date else ""
-                    
+                    lat = place['geometry']['location']['lat']
+                    lng = place['geometry']['location']['lng']
+                    if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+                        continue  # Skip invalid coordinates
                     places.append({
                         'name': place['name'],
-                        'lat': place['geometry']['location']['lat'],
-                        'lng': place['geometry']['location']['lng'],
+                        'lat': lat,
+                        'lng': lng,
                         'date': date,
                         'day_month': day_month
                     })
-                except KeyError:
+                except (KeyError, TypeError):
                     continue
     
     return title, places
 
 def create_kml(places, filename, title, show_dates=False):
+    """
+    Generate a KML file from a list of place dictionaries.
+
+    Args:
+        places (list): List of dicts with keys 'name', 'lat', 'lng', 'date', 'day_month'.
+        filename (str): Output path for the KML file.
+        title (str): KML document name.
+        show_dates (bool): If True, include the day/month in the placemark name.
+    """
     kml = ET.Element('kml', xmlns='http://www.opengis.net/kml/2.2')
     doc = ET.SubElement(kml, 'Document')
     ET.SubElement(doc, 'name').text = title
@@ -99,17 +132,31 @@ def create_kml(places, filename, title, show_dates=False):
     
     # Write to file
     xml_str = ET.tostring(kml, encoding='utf-8', xml_declaration=True)
-    with open(filename, 'wb') as f:
-        f.write(xml_str)
+    try:
+        with open(filename, 'wb') as f:
+            f.write(xml_str)
+    except IOError as e:
+        print(f"Error writing KML file {filename}: {e}")
 
 def main():
+    """
+    Main function for CLI usage.
+    """
     args = parse_arguments()
-    
+    outdir = os.path.abspath(args.outdir)
+    if not os.path.exists(outdir):
+        try:
+            os.makedirs(outdir)
+            print(f"Created output directory: {outdir}")
+        except Exception as e:
+            print(f"Failed to create output directory '{outdir}': {e}")
+            return
+
     try:
         with open(args.input_file, 'r', encoding='utf-8') as f:
             html = f.read()
     except IOError as e:
-        print(f"Error reading file: {e}")
+        print(f"Error reading input file: {e}")
         return
 
     try:
@@ -119,20 +166,17 @@ def main():
         return
 
     if not places:
-        print("No places found in the trip data")
+        print("No places found in the trip data. Check that your Wanderlog export is correct.")
         return
 
-    # Clean title for filename
     base_name = re.sub(r'[^\w-]', '_', args.output or title).lower()
     
     # Create combined KML
-    create_kml(
-        places, 
-        f"{base_name}_combined.kml", 
-        title, 
-        show_dates=True
-    )
-    print(f"Created: {base_name}_combined.kml")
+    combined_path = os.path.join(outdir, f"{base_name}_combined.kml")
+    create_kml(places, combined_path, title, show_dates=True)
+    print(f"Created: {combined_path}")
+
+    generated_files = [combined_path]
 
     # Create split KMLs if requested
     if args.split:
@@ -140,16 +184,21 @@ def main():
         for place in places:
             date_key = place['date'] or 'no_date'
             by_date[date_key].append(place)
-        
-        for date, places in by_date.items():
+        for date, places_for_date in by_date.items():
             date_str = date.replace('-', '_') if date != 'no_date' else date
-            create_kml(
-                places,
-                f"{base_name}_{date_str}.kml",
-                f"{title} - {date}" if date != 'no_date' else f"{title} - No Date",
-                show_dates=False
-            )
-            print(f"Created: {base_name}_{date_str}.kml")
+            split_path = os.path.join(outdir, f"{base_name}_{date_str}.kml")
+            split_title = f"{title} - {date}" if date != 'no_date' else f"{title} - No Date"
+            create_kml(places_for_date, split_path, split_title, show_dates=False)
+            print(f"Created: {split_path}")
+            generated_files.append(split_path)
+
+    # Print summary
+    print("\nSummary:")
+    print(f"Trip title: {title}")
+    print(f"Total places processed: {len(places)}")
+    print(f"Files generated: {len(generated_files)}")
+    for fpath in generated_files:
+        print(f" - {fpath}")
 
 if __name__ == "__main__":
     main()
